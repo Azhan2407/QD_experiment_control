@@ -1,18 +1,13 @@
-import pyvisa  # type: ignore
-from pylablib.devices import AWG
+import pyvisa
 
-
-class SDG6022X(AWG.GenericAWG):
+class SDG6022X:
     def __init__(self, addr):
-        """
-        Initialize the SDG6022X instrument.
-        If addr is None, it takes the first available VISA resource.
-        """
-        # rm = pyvisa.ResourceManager()
-        # self.instrument = rm.open_resource(addr)
-        super().__init__(addr)
         
-        # print(f"Connected to: {self.instrument.query('*IDN?')}")
+        rm = pyvisa.ResourceManager()
+        self.instrument = rm.open_resource(addr)
+        #idn = self.instrument.query('*IDN?')
+        #print(f"Connected to: {idn.strip()}")
+            
 
     def control_off(self):
         """Turn output OFF"""
@@ -22,12 +17,9 @@ class SDG6022X(AWG.GenericAWG):
         """Turn output ON"""
         self.instrument.write("C1:OUTP ON")
 
-    def set_freq(self, waveform="SQUARE", freq=100000, amp=1):
-        """
-        Set the waveform, frequency, and amplitude.
-        Default: SQUARE wave, 100 kHz, 1 V amplitude
-        """
-        cmd = f"C1:BSWV WVTP,{waveform},FRQ,{freq},AMP,{amp}"
+    def set_freq(self, waveform, freq, amp, stdev):
+        """Set frequency, waveform and amplitude"""
+        cmd = f"C1:BSWV WVTP,{waveform},FRQ,{freq},AMP,{amp}, STDEV,{stdev}"
         self.instrument.write(cmd)
         
     def close(self):
@@ -35,11 +27,11 @@ class SDG6022X(AWG.GenericAWG):
 
 if __name__ == "__main__":
     # Usage
-    ip = "TCPIP::192.168.11.24::INSTR"    
+    ip = "TCPIP::169.254.11.24::INSTR"    
 
-    awg = SDG6022X(ip)  # or SDG6022X("TCPIP::192.168.0.10::INSTR") if you know the address
+    awg = SDG6022X(ip) 
 
-    # awg.control_on()
-    awg.set_freq()
-    # awg.control_off()
+    awg.control_on()
+    awg.set_freq("NOISE", 5055, 0.01, 3.0)
+    #awg.control_off()
     awg.close()
