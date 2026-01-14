@@ -5,6 +5,9 @@ import numpy as np
 
 ip = 'TCPIP::169.254.11.23::INSTR'
 
+
+
+
 import numpy as np
 
 
@@ -80,12 +83,14 @@ if __name__=="__main__":
     sig = np.sin(2 * np.pi * 50 * t) 
     sig /= np.max(np.abs(sig))
 
-    
+
     awg = Agilent33600A(ip)
 
-    awg.upload_custom_waveform('test', sig)
-    awg.set_function('arb')
-    awg.set_sample_rate(sample_rate)
+    # awg.upload_custom_waveform('test', sig)
+    # awg.set_function('sine')
+    # awg.set_frequency(10000)
+    # # awg.set_sample_rate(sample_rate)
+    print(awg.is_output_enabled(channel=1))
 
     awg.close()
 
