@@ -1,14 +1,17 @@
 from pylablib.core.devio import SCPI
 import numpy as np
+from core.Registry import register_command
+
 
 class SDG6022X(SCPI.SCPIDevice):
     def __init__(self, addr):
         super().__init__(addr, term_write="\n", term_read="\n")
-        
+
         # Access the raw PyVISA resource to adjust timeouts
         raw_dev = self.instr.instr
         raw_dev.timeout = 20_000          # 20s timeout (uploading large ARBs takes time)
         raw_dev.chunk_size = 4 * 1024 * 1024  # 4MB chunk size
+        
     # --------------------------------------------------
     # Set functions
     # --------------------------------------------------
@@ -42,7 +45,6 @@ class SDG6022X(SCPI.SCPIDevice):
         
     def enable_output(self, enabled, channel): 
         self.write(f"C{channel}:OUTP {'ON' if enabled else 'OFF'}")
-
 
     # --------------------------------------------------
     # Get functions
@@ -87,18 +89,15 @@ class SDG6022X(SCPI.SCPIDevice):
 
 
 
-if __name__ == "__main__":
-    ip="TCPIP::169.254.11.24::INSTR"
-    
-    with SDG6022X(ip) as awg:
-        print(f"Device ID: {awg.ask('*IDN?')}")   
-        
-        num_points = 10000
-        t = np.linspace(0, 1, int(num_points))
-        sig = np.sin(2 * np.pi * 50 * t) + np.sin(2 * np.pi * 20 * t)
-        sig /= np.max(np.abs(sig))
+@register_command
+def SDGTestFunc (instr, arg1, arg2, arg3):
+    instr.test_print(arg1, arg2)
 
-        awg.upload_custom_waveform('tst', sig, channel=2)
 
-        # awg.set_load(1e3, 2)
     
+@register_command
+def SDG_Set_Arb(instr, arg1, arg2):
+    instr.set_function(arb1)
+    
+
+

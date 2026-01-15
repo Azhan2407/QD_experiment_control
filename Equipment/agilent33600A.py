@@ -1,14 +1,6 @@
 from pylablib.devices import AWG
 import numpy as np
-
-
-
-ip = 'TCPIP::169.254.11.23::INSTR'
-
-
-
-
-import numpy as np
+from core.Registry import register_command
 
 
 class Agilent33600A(AWG.GenericAWG):
@@ -99,11 +91,18 @@ class Agilent33600A(AWG.GenericAWG):
         cmd = f"sour{channel}:AM:STAT {"ON" if on_off else "OFF"}"
 
     
+@register_command
+def A33ArbPhaseSync(instr):
+   instr.arb_phase_sync()
 
+@register_command
+def A33ClearArbitrary(instr):
+   instr.clear_arbritrary()
 
 
 
 if __name__=="__main__":
+    ip = 'TCPIP::169.254.11.24 ::INSTR'
     num_points = 4e4
     sample_rate = 1e6
     t = np.linspace(0, 1, int(num_points))
