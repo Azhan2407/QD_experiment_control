@@ -7,10 +7,11 @@ socket.connect("tcp://localhost:5555")
 
     
 # Create the dictionary
-data = {"cmd": 'SDGtest_print', 'instr' : 'SDG_Gen1'}
+data = {}
 
 while True:
     data['cmd']=input('cmd: ')
+    data['instrument']=input('instr: ')
     data['arg1']=input('arg1: ')
     data['arg2']=input('arg2: ')
     data['arg3']=input('arg3: ')

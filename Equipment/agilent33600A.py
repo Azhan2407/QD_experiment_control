@@ -90,12 +90,23 @@ class Agilent33600A(AWG.GenericAWG):
     def set_amplitude_modulation(self, channel, on_off):
         cmd = f"sour{channel}:AM:STAT {"ON" if on_off else "OFF"}"
 
-    
+
+def require_Agilent33600A(func):    
+    def wrapper(instr, *args, **kwargs):
+        if not isinstance(instr, Agilent33600A):
+            raise TypeError("instr must be an instance of SDG")
+        return func(instr, *args, **kwargs)
+    return wrapper
+
+
 @register_command
+@require_Agilent33600A
 def A33ArbPhaseSync(instr):
    instr.arb_phase_sync()
 
+
 @register_command
+@require_Agilent33600A
 def A33ClearArbitrary(instr):
    instr.clear_arbritrary()
 

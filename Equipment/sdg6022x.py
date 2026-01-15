@@ -87,17 +87,19 @@ class SDG6022X(SCPI.SCPIDevice):
         """Sets sample rate in Sa/s"""
         self.write(f"C{channel}:BSWV SRATE,{sample_rate}")
 
+    def test_print(self, arg1, arg2, arg3):
+        print(f'Test print: {arg1, arg2, arg3}')
 
 
 @register_command
-def SDGTestFunc (instr, arg1, arg2, arg3):
-    instr.test_print(arg1, arg2)
+def SDGTestFunc (instr : SDG6022X, arg1, arg2, arg3):
+    instr.test_print(arg1, arg2, arg3)
 
 
     
 @register_command
 def SDG_Set_Arb(instr, arg1, arg2):
-    instr.set_function(arb1)
+    instr.set_function(arg1)
     
 
 
