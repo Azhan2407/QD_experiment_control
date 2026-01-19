@@ -1,7 +1,7 @@
 import pyvisa
 import socket
 
-rm = pyvisa.ResourceManager()
+rm = pyvisa.ResourceManager(visa_library='@py')
 
 
 for r in rm.list_resources():

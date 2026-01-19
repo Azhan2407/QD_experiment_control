@@ -9,8 +9,8 @@ from Equipment import SDG6022X, Agilent33600A
 
 
 device_configs = {
-    'AG33600A_Gen1' : (Agilent33600A, 'TCPIP::169.254.11.23::INSTR'),
-    'SDG6022X_Gen1' : (SDG6022X, 'TCPIP::169.254.11.24::INSTR'),
+    # 'AG33600A_Gen1' : (Agilent33600A, 'TCPIP::169.254.11.23::INSTR'),
+    'SDG6022X_Gen1' : SDG6022X('TCPIP::169.254.11.24::INSTR'),
 }
 
 
