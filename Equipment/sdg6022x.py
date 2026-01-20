@@ -1,6 +1,10 @@
+import cmd
 from pylablib.core.devio import SCPI
 import numpy as np
 
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.Registry import register_command
 import time
@@ -251,22 +255,222 @@ def SDG60ConfPulse1(instr,kwargs):
     instr.write(full_command)
 
 
+@register_command
+def SDG60LoadPolarity(instr, kwargs):
+    channel = kwargs.get('channel', 1)
+    Base_cmd = f"C{channel}:OUTP"
+    cmd_parts = []
+    if kwargs.get('Impedance', 50) >= 1e6:
+        cmd_parts.append("LOAD,HZ")
+    else:
+        cmd_parts.append(f"LOAD,{kwargs['Impedance']:#.14g}")
+    if 'polarity' in kwargs:
+        cmd_parts.append(f"PLRT,{kwargs['polarity']}")
+    full_command = ",".join(cmd_parts)
+    full_command = f"{Base_cmd} {full_command}"
+    print(f"[SENT] {full_command}")
+    
+    instr.write(full_command)
+
+@register_command
+def SDG60ModulationOff(instr, channel, OUTPUT_ENABLED):
+    base_cmd = f"C{channel}:MDWV"
+    cmd_parts = []
+    if  OUTPUT_ENABLED:
+        cmd_parts.append("STATE,ON")
+    else:
+        cmd_parts.append("STATE,OFF")
+
+    full_command = ",".join(cmd_parts)
+    full_command = f"{base_cmd} {full_command}"
+    print(f"[SENT] {full_command}")
+
+    instr.write(full_command)
+
+def SDG60Trg(instr):
+    full_command = "%.;BTWV MTRIG"
+    print(f"[SENT] {full_command}")
+    instr.write(full_command)
+
+def SDG60SelectChannel(instr, channel):
+    full_command = f"C{channel}:BSWV"
+    print(f"[SENT] {full_command}")
+    instr.write(full_command)
+    time.sleep(0.5)
+
+@register_command
+def SDG60SelectArbitraryWFM(instr, **kwargs):
+    """
+    Selects an Arbitrary Waveform.
+    - Handles 'User Created' ARBs (ARB1, ARB2...) with a delay.
+    - Handles 'Built-in' ARBs using a mapping table for specific indices.
+    """
+    channel = kwargs.get('channel', 1)
+
+    # --- MAPPING TABLE ---
+    # Maps the easy name to the specific Siglent Index
+    BUILTIN_MAP = {
+        "SINE": 0,
+        "NOISE": 1,
+        "PULSE": 5,
+        "RAMP": 8,
+        "TRIANGLE": 36,
+        "SQUARE": 47
+    }
+
+    # --- CASE 1: User Created Arb ---
+    if 'user_arb_number' in kwargs:
+        arb_num = kwargs['user_arb_number']
+        arb_name = f"ARB{arb_num}"
+        
+        cmd = f"C{channel}:ARWV NAME,{arb_name}"
+        print(f"[SENT] {cmd}")
+        instr.write(cmd)
+        
+        print("Waiting 3.0s for User Arb load...")
+        time.sleep(3.0)
+
+    # --- CASE 2: Built-in Waveform ---
+    elif 'builtin_index' in kwargs:
+        raw_input = kwargs['builtin_index']
+        
+        # Logic: Determine the correct Index
+        if isinstance(raw_input, str):
+            # If input is "SQUARE", look up 47
+            # .upper() makes it case-insensitive ("Square" -> "SQUARE")
+            index = BUILTIN_MAP.get(raw_input.upper())
+            
+            if index is None:
+                print(f"[ERROR] Unknown Built-in Name: '{raw_input}'. Sending as 0.")
+                index = 0
+        else:
+            # If input is already a number (e.g. 47), use it directly
+            index = int(raw_input)
+
+        cmd = f"C{channel}:ARWV INDEX,{index}"
+        print(f"[SENT] {cmd}")
+        instr.write(cmd)
+
+    else:
+        print("[ERROR] Arguments missing. Provide 'user_arb_number' or 'builtin_index'.")
 
 
+@register_command
+def SDG60ReadParameters(instr, **kwargs):
+    channel = kwargs.get('channel', 1)
+    queries = ["BSWV", "MDWV", "SWWV", "BTWV", "SRATE"]
+    
+    base_cmd = f"C{channel}:"
+    results = {}
+
+    print(f"--- Reading Parameters for Channel {channel} ---")
+
+    for q in queries:
+        # 1. ADD \n HERE 
+        # The instrument needs this to know the command is finished.
+        full_command = f"{base_cmd}{q}?\n"
+        
+        try:
+            # 2. Write (Frame 1)
+            instr.write(full_command)
+            
+            # 3. Wait (Frame 2)
+            time.sleep(0.1) 
+            
+            # 4. Read (Frame 3)
+            raw_response = instr.read()
+            results[q] = raw_response.strip()
+
+        except Exception as e:
+            print(f"[ERROR] Failed to read {q}: {e}")
+            results[q] = "ERROR"
+            
+            # OPTIONAL: Clear the buffer if an error occurs so it doesn't jam the next one
+            try:
+                instr.instr.clear()
+            except:
+                pass
+
+    print(f"[RESPONSE] {results}")
+    return results
+
+@register_command
+def SDG60ReadArbitraryWFMQ(instr,waveform_name):
+    base_cmd = f"WVDT?"
+    cmd_parts = []
+    cmd_parts.append("USER")
+    cmd_parts.append(f"{waveform_name}")
+    full_command = ",".join(cmd_parts)
+    base_cmd = f"{base_cmd}{full_command}"
+    print(f"[SENT] {base_cmd}")
+    response = instr.ask(base_cmd)
+    print(f"[RESPONSE] {response}")
+    return response  
+
+
+@register_command
+def SDG60Initialize(instr, **kwargs):
+    should_be_on = kwargs.get('OUTPUT_ENABLED', False)
+
+    print("--- Initializing Instrument ---")
+    time.sleep(1.0)
+    for channel in [1, 2]:
+        if should_be_on:
+            cmd = f"C{channel}:OUTP ON"
+        else:
+            cmd = f"C{channel}:OUTP OFF"
+            
+        print(f"[SENT] {cmd}")
+        instr.write(cmd + "\n")
+        time.sleep(0.2)
+    print(f"[SENT] *RST")
+    instr.write("*RST\n") 
+    
+@register_command
+def SDG60ConfNoise(instr, channel, std_dev, voltage_mean, is_bandstate, bandwidth):
+    """
+
+    
+    SCPI Keys:
+    - STDEV: Standard Deviation (Amplitude RMS)
+    - MEAN:  Mean Voltage (Offset)
+    - BAND:  Bandwidth (only sent if is_bandstate is True)
+    """
+    
+
+    cmd_parts = [f"C{channel}:BSWV WVTP,NOISE"]
+    cmd_parts.append(f"STDEV,{std_dev:#.4f}")
+    cmd_parts.append(f"MEAN,{voltage_mean:#.3f}")
+    if is_bandstate:
+        # Note: Siglent uses 'BAND', not 'BANDWIDTH'
+        cmd_parts.append(f"BANDSTATE,ON,BANDWIDTH,{bandwidth:#.23g}")
+    else:
+        cmd_parts.append("BANDSTATE,OFF")
+
+    full_command = ",".join(cmd_parts)
+    print(f"[SENT] {full_command}")
+    instr.write(full_command)
 
 if __name__ == "__main__":
-    # awg = SDG6022X('TCPIP::127.0.0.1::5025::SOCKET')
+    #awg = SDG6022X('TCPIP::127.0.0.1::5025::SOCKET')
 
     # 'TCPIP::169.254.11.24::INSTR'
 
     # TCPIP::127.0.0.1::5026::SOCKET
 
-    with SDG6022X('TCPIP::127.0.0.1::18882::SOCKET') as awg:
+    with SDG6022X('TCPIP::127.0.0.1::5025::SOCKET') as awg:
         # SDG60RefClock(awg, True, False)
         #awg.set_sample_rate(1e9, channel=1)
         #SDG60ConfPRBS(awg, channel=1, bit_rate_period=True, bit_rate=1000, period=0.2e-2, amp=1.0, offset=0.0,length=3, differential_mode=False, edge_time=1e-8)
-        # pass
-        # awg.write('Test test')
-        #awg.set_sample_rate(123, channel=1)
         #SDG60ConfSTDWFM(awg, channel=1, waveform_type="SQUARE", is_freq_mode=True, freq=2.0, period=0.2e-2, amp=0.1, offset=0.0, ramp_symmetry=50.0, phase=0.0,)
-        SDG60ConfPulse1(awg, dict(channel=1, freq=1e3, amp=2.0, offset=0.0, pulse_width=1e-3, rise_time=1e-6))
+        #SDG60ConfPulse1(awg, dict(channel=1, freq=1e3, amp=2.0, offset=0.0, pulse_width=1e-3, rise_time=1e-6))
+        #SDG60LoadPolarity(awg, dict(channel=1, Impedance=50, polarity="NOR"))
+        #SDG60ModulationOff(awg, channel=1, OUTPUT_ENABLED=True)
+        #SDG60Trg(instr=awg)
+        #SDG60SelectChannel(awg, channel=1)
+        #SDG60SelectArbitraryWFM(awg, channel=1, user_arb_number=10)
+        #SDG60SelectArbitraryWFM(awg, channel=1, builtin_index=5)
+        #SDG60ReadParameters(awg, channel=1)
+        #SDG60ReadArbitraryWFMQ(awg, waveform_name="ARB1")
+        #SDG60Initialize(awg, OUTPUT_ENABLED=False)
+        #SDG60ConfNoise(awg, channel=1, std_dev=0.0080, voltage_mean=0.0, is_bandstate=False, bandwidth=80e6)
