@@ -425,7 +425,7 @@ def SDG60Initialize(instr, **kwargs):
         time.sleep(0.2)
     print(f"[SENT] *RST")
     instr.write("*RST\n") 
-    
+
 @register_command
 def SDG60ConfNoise(instr, channel, std_dev, voltage_mean, is_bandstate, bandwidth):
     """
@@ -451,6 +451,206 @@ def SDG60ConfNoise(instr, channel, std_dev, voltage_mean, is_bandstate, bandwidt
     print(f"[SENT] {full_command}")
     instr.write(full_command)
 
+
+
+@register_command
+def SDG60ConfArbWaveform3(instr, **kwargs):
+    channel = kwargs.get('channel', 1)
+    is_DDS = kwargs.get('is_DDS', True)
+    if is_DDS:
+        instr.write(f"C{channel}:SRATE MODE,DDS")
+        time.sleep(0.1)
+        
+        cmd_parts = []
+        if 'frequency' in kwargs:
+            cmd_parts.append(f"FRQ,{kwargs['frequency']:#.15g}")
+        elif 'period' in kwargs:
+            cmd_parts.append(f"PERI,{kwargs['period']:#.15g}")
+        
+        cmd_parts.append(f"AMP,{kwargs.get('amp', 1.0):#.15g}")
+        cmd_parts.append(f"OFST,{kwargs.get('offset', 0.0):#.15g}")
+        cmd_parts.append(f"PHSE,{kwargs.get('phase', 0.0):#.15g}")
+        
+        full_cmd = f"C{channel}:BSWV {','.join(cmd_parts)}"
+        print(f"[SENT] {full_cmd}")
+        instr.write(full_cmd)
+    else:
+        interp_idx = kwargs.get('interpolation_index', 1) 
+        has_freq = 'frequency' in kwargs
+        has_period = 'period' in kwargs
+        has_srate = 'sample_rate' in kwargs
+        if has_srate:
+            val_to_send = kwargs['sample_rate']
+        elif has_period:
+            val_to_send = kwargs['period']
+        else:
+            val_to_send = 1000.0
+        if has_freq:
+            cmd = f"C{channel}:SRATE MODE,TARB,INTER,HOLD"
+        else:
+            interp_str = "LINE" if interp_idx == 1 else "HOLD"
+            cmd = f"C{channel}:SRATE MODE,TARB,INTER,{interp_str},VALUE,{val_to_send:#.15g}"
+
+        print(f"[SENT] {cmd}")
+        instr.write(cmd)
+        time.sleep(0.1)
+
+        cmd_parts = []
+        
+        if has_freq:
+             cmd_parts.append(f"FRQ,{kwargs['frequency']:#.15g}")
+        elif has_period:
+             cmd_parts.append(f"PERI,{kwargs['period']:#.15g}")
+        
+        cmd_parts.append(f"AMP,{kwargs.get('amp', 1.0):#.15g}")
+        cmd_parts.append(f"OFST,{kwargs.get('offset', 0.0):#.15g}")
+        cmd_parts.append(f"PHSE,{kwargs.get('phase', 0.0):#.15g}")
+        
+        full_cmd = f"C{channel}:BSWV {','.join(cmd_parts)}"
+        print(f"[SENT] {full_cmd}")
+        instr.write(full_cmd)
+        time.sleep(0.1)
+
+        if interp_idx in [2, 3, 4]:
+            MAGIC_KEYS = {
+                2: 18,  # Sinc
+                3: 13,  # Sinc27
+                4: 8    # Sinc13
+            }
+            target_key = MAGIC_KEYS[interp_idx]
+            sequence = [5, 3, 23, target_key, 3]
+            
+            print(f"--- Triggering VKEY Sequence for Interpolation {interp_idx} ---")
+            for key in sequence:
+                cmd = f"VKEY VALUE,{key},STATE,1"
+                print(f"[SENT] {cmd}")
+                instr.write(cmd)
+                time.sleep(0.3)
+
+
+@register_command
+def SDG60ConfBurst2(instr, **kwargs):
+    """
+    Configures Burst Waveform matching LabVIEW logic.
+    
+    Arguments (LabVIEW Names):
+    - Channel, Enable_Burst, Start_Phase
+    - Triggered_Gated (0=Triggered, 1=Gated)
+    - TRG_Gate_Source (0=Int, 1=Ext, 2=Man)
+    - Trg_Gate_Polarity (0=Pos/Rise, 1=Neg/Fall)
+    - Burst_Cycle (0=N-Cycle, 1=Infinite)
+    - Number_of_Cycles (Integer)
+    - Burst_Period (Float)
+    - Burst_Delay (Float)
+    """
+    
+    channel = kwargs.get('Channel', 1)
+    enable = kwargs.get('Enable_Burst', False)
+    
+    # --- 1. STATE ---
+    state_str = "ON" if enable else "OFF"
+    cmd_parts = [f"STATE,{state_str}"]
+
+    if not enable:
+        full_command = f"C{channel}:BTWV {','.join(cmd_parts)}"
+        print(f"[SENT] {full_command}")
+        instr.write(full_command)
+        return
+
+    # --- 2. STPS (Start Phase) ---
+    stps = kwargs.get('Start_Phase', 0.0)
+    cmd_parts.append(f"STPS,{stps:#.15g}")
+
+    # --- 3. GATE_NCYC (Carrier Mode) ---
+    # 0=Triggered (NCYC), 1=Gated (GATE)
+    trig_mode_input = kwargs.get('Triggered_Gated', 0)
+    if trig_mode_input == 1:
+        carrier_mode = "GATE"
+    else:
+        carrier_mode = "NCYC"
+    cmd_parts.append(f"GATE_NCYC,{carrier_mode}")
+
+    # --- 4. TRSR (Trigger Source) ---
+    # 0=INT, 1=EXT, 2=MAN
+    src_input = kwargs.get('TRG_Gate_Source', 0)
+    TRSR_MAP = {0: 'INT', 1: 'EXT', 2: 'MAN'}
+    trsr = TRSR_MAP.get(src_input, 'INT') 
+
+    # LOCKOUT: Gated cannot be Manual -> Force EXT
+    if carrier_mode == "GATE" and trsr == "MAN":
+        print("[WARN] Manual Trigger not allowed in Gated mode. Switching to EXT.")
+        trsr = "EXT"
+    cmd_parts.append(f"TRSR,{trsr}")
+
+    # --- 5. EDGE / PLRT ---
+    pol_input = kwargs.get('Trg_Gate_Polarity', 0) 
+
+    if carrier_mode == "GATE":
+        # Gated -> PLRT (POS/NEG)
+        val_str = "NEG" if pol_input == 1 else "POS"
+        cmd_parts.append(f"PLRT,{val_str}")
+    
+    elif carrier_mode == "NCYC":
+        # Triggered -> EDGE (RISE/FALL) - Only if EXT
+        if trsr == "EXT":
+            val_str = "FALL" if pol_input == 1 else "RISE"
+            cmd_parts.append(f"EDGE,{val_str}")
+
+    # --- 6. DLAY (Delay) ---
+    delay = kwargs.get('Burst_Delay', 0.0)
+    cmd_parts.append(f"DLAY,{delay:.15E}") 
+
+    # --- 7. TIME (Cycle Count) ---
+    # RULE: TIME is sent ONLY in NCYC mode. 
+    # Gated mode NEVER sends TIME.
+    if carrier_mode == "NCYC":
+        cycle_mode_input = kwargs.get('Burst_Cycle', 0) # 0=N-Cycle, 1=Infinite
+        
+        if cycle_mode_input == 1:
+            # Triggered + Infinite -> TIME,INF
+            cmd_parts.append("TIME,INF")
+        else:
+            # Triggered + N-Cycle -> TIME,val
+            val = kwargs.get('Number_of_Cycles', 1)
+            cmd_parts.append(f"TIME,{val}")
+
+    # --- 8. PRD (Period) ---
+    # RULE: Sent ONLY if INT source. 
+    # EXCEPTION: Skipped if Gated+Infinite.
+    if trsr == 'INT':
+        cycle_mode_input = kwargs.get('Burst_Cycle', 0)
+        
+        # In Gated mode, Infinite usually implies the gate controls everything, so no internal PRD.
+        skip_prd = (carrier_mode == "GATE" and cycle_mode_input == 1)
+        
+        if not skip_prd:
+            period = kwargs.get('Burst_Period', 0.0)
+            cmd_parts.append(f"PRD,{period:.9E}")
+
+    # --- 9. TRMD ---
+    cmd_parts.append("TRMD,OFF")
+
+    # --- Send ---
+    full_command = f"C{channel}:BTWV {','.join(cmd_parts)}"
+    print(f"[SENT] {full_command}")
+    instr.write(full_command)
+
+@register_command
+def SDG60OutputOnOff(instr, channel, OUTPUT_ENABLED):
+
+    cmd_parts = []
+    cmd_parts.append(f"{OUTPUT_ENABLED}")
+    if OUTPUT_ENABLED:
+        cmd_parts.append("ON")
+        full_command = f"C{channel}:OUTP {'ON'}"
+        print(f"[SENT] {full_command}")
+    else:
+        cmd_parts.append("OFF")
+        full_command = f"C{channel}:OUTP {'OFF'}"
+        print(f"[SENT] {full_command}")
+    instr.write(full_command)
+
+
 if __name__ == "__main__":
     #awg = SDG6022X('TCPIP::127.0.0.1::5025::SOCKET')
 
@@ -459,8 +659,7 @@ if __name__ == "__main__":
     # TCPIP::127.0.0.1::5026::SOCKET
 
     with SDG6022X('TCPIP::127.0.0.1::5025::SOCKET') as awg:
-        # SDG60RefClock(awg, True, False)
-        #awg.set_sample_rate(1e9, channel=1)
+        #SDG60RefClock(awg, True, False)
         #SDG60ConfPRBS(awg, channel=1, bit_rate_period=True, bit_rate=1000, period=0.2e-2, amp=1.0, offset=0.0,length=3, differential_mode=False, edge_time=1e-8)
         #SDG60ConfSTDWFM(awg, channel=1, waveform_type="SQUARE", is_freq_mode=True, freq=2.0, period=0.2e-2, amp=0.1, offset=0.0, ramp_symmetry=50.0, phase=0.0,)
         #SDG60ConfPulse1(awg, dict(channel=1, freq=1e3, amp=2.0, offset=0.0, pulse_width=1e-3, rise_time=1e-6))
@@ -474,3 +673,6 @@ if __name__ == "__main__":
         #SDG60ReadArbitraryWFMQ(awg, waveform_name="ARB1")
         #SDG60Initialize(awg, OUTPUT_ENABLED=False)
         #SDG60ConfNoise(awg, channel=1, std_dev=0.0080, voltage_mean=0.0, is_bandstate=False, bandwidth=80e6)
+        #SDG60ConfArbWaveform3(awg, channel=1, is_DDS=False, frequency=2.0,amp=0.1, offset=0.0,phase=0.0, interpolation_index=2)
+        #SDG60ConfBurst2(awg,Channel=1,Enable_Burst=True,Triggered_Gated=1,TRG_Gate_Source=2, Burst_Cycle=1,Start_Phase=2.0,Number_of_Cycles=-9,Burst_Period=1.352e-6,Burst_Delay=1.352e-6)
+        SDG60OutputOnOff(awg, channel=1, OUTPUT_ENABLED=False)
